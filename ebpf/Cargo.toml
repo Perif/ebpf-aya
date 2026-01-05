@@ -1,0 +1,14 @@
+[package]
+name = "ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Must be cdylib for BPF compilation
+crate-type = ["cdylib"] 
+
+[dependencies]
+# Core eBPF types
+aya-ebpf = "0.1.0"      
+# Logging from kernel
+aya-log-ebpf = "0.1.0" 
