@@ -9,6 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Core eBPF types
-aya-ebpf = "0.1.0"      
+aya-ebpf = "0.1.1"      
 # Logging from kernel
 aya-log-ebpf = "0.1.0" 

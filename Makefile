@@ -15,6 +15,10 @@ ifdef RELEASE
 	XTASK_FLAGS += --release
 endif
 
+# Usage: make run PID=12345 FDS="1 2"
+PID ?= 0
+FDS ?=
+
 # Targets that don't match filenames
 .PHONY: all install-deps build build-bpf build-userspace run test clean help
 
@@ -53,8 +57,8 @@ build-userspace:
 # Run the application
 # Note: sudo -E preserves the environment (needed for RUST_LOG to work)
 run: build
-	@echo ">> Running $(USER_APP) (sudo required)..."
-	sudo -E RUST_LOG=info ./target/$(PROFILE)/$(USER_APP)
+		@echo ">> Running $(USER_APP) (sudo required)..."
+		sudo -E RUST_LOG=info ./target/$(PROFILE)/$(USER_APP) --pid $(PID) $(foreach fd,$(FDS),--fds $(fd))
 
 # --- Testing & Maintenance ---
 

@@ -4,50 +4,57 @@ use aya_log::EbpfLogger;
 use clap::Parser;
 use log::{info, warn};
 use tokio::signal;
+use aya::maps::HashMap;
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Args {}
+struct Args {
+    #[clap(short, long)]
+    pid: u32,
+
+    #[clap(short, long)]
+    fds: Vec<u32>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    let args = Args::parse();
     env_logger::init();
 
-    // 1. Load the eBPF binary compiled by xtask
-    // We use `include_bytes_aligned` to bundle the BPF bytecode into our binary.
+    // 1. Load the eBPF bytecode
+    // Ensure this path matches your build output (likely 'ebpf' without .so)
     #[cfg(debug_assertions)]
     let mut bpf = Ebpf::load(include_bytes_aligned!(
-        "../../target/bpfel-unknown-none/debug/libebpf.so" // Added 'lib' prefix
+        "../../target/bpfel-unknown-none/debug/libebpf.so"
     ))?;
-
     #[cfg(not(debug_assertions))]
     let mut bpf = Ebpf::load(include_bytes_aligned!(
-        "../../target/bpfel-unknown-none/release/libebpf.so" // Added 'lib' prefix
+        "../../target/bpfel-unknown-none/release/libebpf.so"
     ))?;
 
-    // 2. Initialize eBPF logging
-    // This allows `info!` calls in the kernel to show up in our terminal.
+    // 2. Initialize Logging
     if let Err(e) = EbpfLogger::init(&mut bpf) {
         warn!("failed to initialize eBPF logger: {}", e);
     }
 
-    // 3. Load the specific program (syscall_enter)
-    // Note: The name "syscall_enter" must match the function name in ebpf/src/lib.rs
-    let program: &mut TracePoint = bpf.program_mut("syscall_enter").unwrap().try_into()?;
+    // 3. Configure PID filter
+    // We use 0 as a dummy value to simulate a set
+    let mut target_pid: HashMap<_, u32, u32> = HashMap::try_from(bpf.map_mut("TARGET_PID").unwrap())?;
+    target_pid.insert(args.pid, 0, 0)?;
+
+    // 4. Configure FD filter
+    let mut target_fds: HashMap<_, u32, u32> = HashMap::try_from(bpf.map_mut("TARGET_FDS").unwrap())?;
+    for fd in args.fds {
+        target_fds.insert(fd, 0, 0)?;
+        info!("Monitoring PID {} on FD {}", args.pid, fd);
+    }
+
+    // 5. Attach the Tracepoint
+    let program: &mut TracePoint = bpf.program_mut("syscall_write").unwrap().try_into()?;
     program.load()?;
+    program.attach("syscalls", "sys_enter_write")?;
 
-    // 4. Attach to the Kernel Tracepoint
-    // "syscalls" is the category, "sys_enter_execve" is the specific event.
-    // We attach to `execve` to avoid spamming logs for every single syscall.
-    // If you want ALL syscalls, use "sys_enter" (warning: extremely high volume).
-    let _link_id = program.attach("syscalls", "sys_enter_execve")?;
-    
-    info!("eBPF program attached! Waiting for Ctrl-C...");
-
-    // 5. Keep running until Ctrl-C
-    // If we drop `link_id` or exit, the eBPF program is detached.
+    info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
-    
     info!("Exiting...");
 
     Ok(())
